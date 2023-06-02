@@ -12,22 +12,31 @@
 //! The `print_db_details()` function prints the database details, including the database name, version,
 //! current time, usage hints, and connection status.
 //!
-//! ## Example
+//! ## Examples
 //!
 //! ```rust
-//! use sqldb::utils;
+//! use sqldb::utils::{print_db_details, print_prompt};
 //!
 //! fn main() -> std::io::Result<()> {
-//!     utils::print_db_details();
-//!     utils::print_prompt()?;
+//!     print_db_details();
+//!     print_prompt()?;
 //!     Ok(())
 //! }
 //! ```
 
-use cargo_metadata::{semver::Version, Metadata, MetadataCommand};
 use chrono::Local;
-use lazy_static::lazy_static;
+use once_cell::sync::Lazy;
+use std::fs;
 use std::io::{self, Write};
+use toml::Value;
+
+// Metadata struct holding the program name and version.
+struct Metadata {
+    name: String,
+    version: String,
+}
+
+static METADATA: Lazy<Metadata> = Lazy::new(retrieve_metadata);
 
 /// Prints the prompt for user input.
 ///
@@ -35,21 +44,21 @@ use std::io::{self, Write};
 ///
 /// # Errors
 ///
-/// Returns an `io::Result` indicating whether the prompt was printed successfully or if an error
+/// Returns an `std::io::Result` indicating whether the prompt was printed successfully or if an error
 /// occurred during the output operation.
 ///
 /// # Examples
 ///
 /// ```rust
-/// use sqldb::utils;
+/// use sqldb::utils::print_prompt;
 ///
 /// fn main() -> std::io::Result<()> {
-///     utils::print_prompt()?;
+///     print_prompt()?;
 ///     Ok(())
 /// }
 /// ```
 pub fn print_prompt() -> io::Result<()> {
-    print!("{} > ", *PKG_NAME);
+    print!("{} > ", METADATA.name);
     io::stdout().flush()?;
     Ok(())
 }
@@ -62,10 +71,10 @@ pub fn print_prompt() -> io::Result<()> {
 /// # Examples
 ///
 /// ```rust
-/// # use sqldb::utils;
+/// # use sqldb::utils::print_db_details;
 ///
 /// fn main() {
-///     utils::print_db_details();
+///     print_db_details();
 /// }
 /// ```
 pub fn print_db_details() {
@@ -73,7 +82,7 @@ pub fn print_db_details() {
 
     println!(
         "{} version {} {}",
-        *PKG_NAME, *PKG_VERSION, current_time_string
+        METADATA.name, METADATA.version, current_time_string
     );
     println!("Enter \".help\" for usage hints.");
     println!("Connected to a transient in-memory database.");
@@ -81,17 +90,27 @@ pub fn print_db_details() {
     println!("Enter \".exit\" to exit the database.");
 }
 
-/// Retrieves the Cargo metadata.
-fn retrieve_cargo_metadata() -> Metadata {
-    MetadataCommand::new()
-        .no_deps()
-        .exec()
-        .expect("Failed to retrieve cargo metadata")
-}
+fn retrieve_metadata() -> Metadata {
+    let toml_content = fs::read_to_string("Cargo.toml").expect("Failed to read Cargo.toml file");
 
-lazy_static! {
-    /// The package name obtained from the Cargo.toml file.
-    static ref PKG_NAME: String = retrieve_cargo_metadata().packages[0].name.clone();
-    /// The package version obtained from the Cargo.toml file.
-    static ref PKG_VERSION: Version = retrieve_cargo_metadata().packages[0].version.clone();
+    let toml: Value = toml::from_str(&toml_content).expect("Failed to parse Cargo.toml content");
+
+    let package = toml
+        .get("package")
+        .and_then(|value| value.as_table())
+        .expect("Failed to find 'package' section in Cargo.toml");
+
+    let name = package
+        .get("name")
+        .and_then(|value| value.as_str())
+        .expect("Failed to find 'name' field in 'package' section")
+        .to_owned();
+
+    let version = package
+        .get("version")
+        .and_then(|value| value.as_str())
+        .expect("Failed to find 'version' field in 'package' section")
+        .to_owned();
+
+    Metadata { name, version }
 }

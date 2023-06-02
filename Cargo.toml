@@ -5,6 +5,7 @@ edition = "2021"
 publish = false
 
 [dependencies]
-cargo_metadata = "0.15"
-lazy_static = "1.4"
 chrono = "0.4"
+once_cell = "1.17.2"
+semver = "1.0.17"
+toml = "0.7.4"
