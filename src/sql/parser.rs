@@ -107,10 +107,11 @@
 
 use crate::sql::tokenizer::InputBuffer;
 use std::process;
+use std::str::FromStr;
 
 pub fn run_command(input_buffer: &InputBuffer, command: &mut Command) {
     match parse_command(input_buffer, command) {
-        Ok(()) => match execute_command(command) {
+        Ok(()) => match execute_command(&*command) {
             Ok(()) => {}
             Err(err) => {
                 eprintln!("Error executing command: {}", err);
@@ -129,6 +130,9 @@ pub fn run_command(input_buffer: &InputBuffer, command: &mut Command) {
             CommandError::UnrecognizedQuery(query) => {
                 eprintln!("Unrecognized query: '{}'.", query);
             }
+            CommandError::SystaxError => {
+                eprintln!("SQL Syntax error")
+            }
         },
     }
 }
@@ -145,6 +149,8 @@ enum CommandError {
     UnrecognizedMetaCommand(String),
     /// The SQL query is not recognized.
     UnrecognizedQuery(String),
+    /// SQL Syntax Error
+    SystaxError,
 }
 
 /// Represents the different types of meta commands.
@@ -167,9 +173,15 @@ enum CommandType {
     Query(Query),
 }
 
-#[derive(Default)]
 pub struct Command {
     variant: Option<CommandType>,
+    row: Option<Row>,
+}
+
+struct Row {
+    id: u32,
+    username: String,
+    email: String,
 }
 
 fn parse_command(input_buffer: &InputBuffer, command: &mut Command) -> CommandResult<()> {
@@ -195,7 +207,26 @@ fn parse_command(input_buffer: &InputBuffer, command: &mut Command) -> CommandRe
         command.variant = Some(CommandType::Query(Query::Select));
         Ok(())
     } else if buffer_content.starts_with("insert") {
+        // id: integer, username: varchar(32), email: varchar(255)
+        // insert id username email
+        let args: Vec<&str> = buffer_content.split_whitespace().collect();
+        // first word is insert
+        if args.len() < 4 {
+            return Err(CommandError::SystaxError);
+        }
+
+        let id = u32::from_str(args[1]).map_err(|_| CommandError::SystaxError)?;
+        let username = args[2].to_string();
+        let email = args[3].to_string();
+
+        let row = Row {
+            id,
+            username,
+            email,
+        };
+
         command.variant = Some(CommandType::Query(Query::Insert));
+        command.row = Some(row);
         Ok(())
     } else {
         Err(CommandError::UnrecognizedQuery(buffer_content.to_string()))
@@ -238,7 +269,10 @@ fn parse_meta_command(buffer_content: &str) -> Option<MetaCommand> {
 
 impl Command {
     pub fn new() -> Self {
-        Self::default()
+        Self {
+            variant: None,
+            row: None,
+        }
     }
 }
 
@@ -251,7 +285,7 @@ impl std::fmt::Display for CommandError {
                 write!(f, "Unrecognized meta command: '{}'.", cmd)
             }
             CommandError::UnrecognizedQuery(query) => write!(f, "Unrecognized query: '{}'.", query),
-            // Add custom error messages for more error variants
+            CommandError::SystaxError => write!(f, "SQL Syntax error"), // Add custom error messages for more error variants
         }
     }
 }
